@@ -1,6 +1,6 @@
 # ============================================================
-# PRIVATE.sh - 亚瑟 AX1800 Pro (1G RAM) 专属配置
-# dae + honk + NSS 共存 | BTF/eBPF | 无线双频固化
+# 亚瑟 AX1800 Pro (1G RAM) - 完整编译配置
+# daede + honk + NSS 共存 | BTF/eBPF | 无线双频固化
 # ============================================================
 
 # ---------- 设备锁定：仅亚瑟 ----------
@@ -8,7 +8,6 @@ CONFIG_TARGET_qualcommax=y
 CONFIG_TARGET_qualcommax_ipq60xx=y
 CONFIG_TARGET_qualcommax_ipq60xx_DEVICE_jdcloud_re-ss-01=y
 
-# 取消所有其他 IPQ60xx 设备
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_qihoo_360v6=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_anysafe_e1=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_cmiot_ax18=n
@@ -27,7 +26,7 @@ CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_sy_y6010=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_xiaomi_ax1800=n
 CONFIG_TARGET_DEVICE_qualcommax_ipq60xx_DEVICE_zn_m2=n
 
-# ---------- 内核 eBPF / BTF（dae + honk 核心依赖） ----------
+# ---------- 内核 eBPF / BTF ----------
 CONFIG_KERNEL_BPF=y
 CONFIG_KERNEL_BPF_SYSCALL=y
 CONFIG_KERNEL_BPF_JIT=y
@@ -52,7 +51,7 @@ CONFIG_PACKAGE_kmod-nfnetlink-queue=y
 CONFIG_PACKAGE_kmod-nf-conntrack=y
 CONFIG_PACKAGE_libstdcpp=y
 
-# ---------- NSS 硬件加速（1G 版全开，与 eBPF 共存） ----------
+# ---------- NSS 硬件加速 ----------
 CONFIG_PACKAGE_kmod-qca-nss-drv=y
 CONFIG_PACKAGE_kmod-qca-nss-ecm=y
 CONFIG_PACKAGE_kmod-qca-nss-drv-pppoe=y
@@ -62,38 +61,39 @@ CONFIG_PACKAGE_kmod-nss-wifi-drv=y
 CONFIG_PACKAGE_qca-nss-firmware-ipq60xx=y
 CONFIG_PACKAGE_nss-ifb=y
 
-# 关掉与 eBPF 冲突的内核 flow offload（NSS 接管，不用这个）
 CONFIG_PACKAGE_kmod-nft-offload=n
 CONFIG_PACKAGE_kmod-ipt-offload=n
 
-# ---------- dae 全家桶 ----------
+# ---------- dae 核心 + daed 后端 ----------
 CONFIG_PACKAGE_dae=y
 CONFIG_PACKAGE_daed=y
-CONFIG_PACKAGE_luci-app-dae=y
-CONFIG_PACKAGE_luci-app-daed=y
-CONFIG_PACKAGE_luci-lib-daeuniverse=y
+
+# ---------- kenzok8 daede 统一面板 ----------
+CONFIG_PACKAGE_luci-app-daede=y
+CONFIG_PACKAGE_luci-app-daed=n
+CONFIG_PACKAGE_luci-app-dae=n
+CONFIG_PACKAGE_luci-lib-daeuniverse=m
 
 # ---------- honk ----------
 CONFIG_PACKAGE_honk=y
 CONFIG_PACKAGE_luci-app-honk=y
 
-# ---------- OpenClash（不含内核二进制） ----------
+# ---------- OpenClash ----------
 CONFIG_PACKAGE_luci-app-openclash=y
-CONFIG_PACKAGE_dnsmasq=n
 CONFIG_PACKAGE_dnsmasq-full=y
 CONFIG_PACKAGE_kmod-nft-tproxy=y
 CONFIG_PACKAGE_kmod-nft-nat=y
 CONFIG_PACKAGE_kmod-tun=y
 
-# ---------- ttyd 网页终端 ----------
+# ---------- ttyd ----------
 CONFIG_PACKAGE_ttyd=y
 CONFIG_PACKAGE_luci-app-ttyd=y
 
-# ---------- 调试工具 ----------
+# ---------- 调试 ----------
 CONFIG_PACKAGE_bpftool=y
 CONFIG_PACKAGE_tcpdump=y
 
-# ---------- 禁用冗余/冲突插件 ----------
+# ---------- 禁用冗余/冲突 ----------
 CONFIG_PACKAGE_luci-app-gecoosac=n
 CONFIG_PACKAGE_luci-app-fullconenat-sonic=n
 CONFIG_PACKAGE_luci-app-natmapt=n
