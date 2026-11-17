@@ -66,19 +66,22 @@ FIX "ipq60xx-rootfs-size" "./target/linux/qualcommax/image" sed -i \
 	-E 's/^([[:space:]]*ROOTFS_SIZE[[:space:]]*:=[[:space:]]*).*/\120480k/' \
 	"./target/linux/qualcommax/image/ipq60xx.mk"
 
-# ---------- BTF kconfig 兜底追加 ----------
-FIX "btf-kconfig-append" "./target/linux/qualcommax" bash -c '
-KCFG="./target/linux/qualcommax/config-6.12"
-[ -f "$KCFG" ] || KCFG="./target/linux/qualcommax/config-6.6"
+# ---------- BTF kconfig 强制覆盖（针对 6.18：关 REDUCED，开 BTF）----------
+FIX "btf-kconfig-force-618" "./target/linux/qualcommax" bash -c '
+KCFG="./target/linux/qualcommax/config-6.18"
 [ -f "$KCFG" ] || exit 0
-grep -q "CONFIG_DEBUG_INFO_BTF" "$KCFG" || cat >> "$KCFG" << '"'"'BTFEOT'"'"'
-CONFIG_BPF=y
-CONFIG_BPF_SYSCALL=y
-CONFIG_BPF_JIT=y
+sed -i "/^CONFIG_DEBUG_INFO_REDUCED=/d" "$KCFG"
+sed -i "/^CONFIG_DEBUG_INFO_BTF=/d" "$KCFG"
+cat >> "$KCFG" << '"'"'BTFEOT'"'"'
 CONFIG_DEBUG_INFO=y
+CONFIG_DEBUG_INFO_REDUCED=n
+CONFIG_DEBUG_INFO_DWARF5=y
 CONFIG_DEBUG_INFO_BTF=y
+CONFIG_DEBUG_INFO_BTF_MODULES=y
+CONFIG_PAHOLE_HAS_SPLIT_BTF=y
 CONFIG_BPF_EVENTS=y
 CONFIG_CGROUP_BPF=y
+CONFIG_XDP_SOCKETS=y
 BTFEOT
 '
 
@@ -99,58 +102,119 @@ UPDATE_PACKAGE "openwrt-daede" "kenzok8/openwrt-daede" "main" "pkg"
 UPDATE_PACKAGE "dae" "daeuniverse/dae" "main" "pkg"
 UPDATE_PACKAGE "daed" "daeuniverse/daed" "main" "pkg"
 
-# ---------- honk（kenzok8/openwrt-honk 一体源）----------
-UPDATE_PACKAGE "openwrt-honk" "kenzok8/openwrt-honk" "main" "pkg"
+# ---------- honk（189160/luci-app-honk，支持 aarch64）----------
+UPDATE_PACKAGE "luci-app-honk" "189160/luci-app-honk" "main" "pkg"
 
-# ---------- 双频无线固化：5G CN/36/HE80 | 2.4G CN/1/HT20 ----------
+# ---------- 双频无线固化：hotplug 方式（不依赖开机时序）----------
+mkdir -p "$PACKAGE_PATH/base-files/files/etc/hotplug.d/ieee80211"
+cat > "$PACKAGE_PATH/base-files/files/etc/hotplug.d/ieee80211/10-cn-fix" << 'WLEOT'
+#!/bin/sh
+# phy 上线后按实际频段固化 CN/信道/带宽，幂等执行
+[ "$ACTION" = "add" ] || exit 0
+
+DEV="${DEVNAME:-$DEVICE}"
+[ -n "$DEV" ] || exit 0
+
+INFO=$(iw phy "$DEV" info 2>/dev/null)
+[ -n "$INFO" ] || exit 0
+
+# 取该 phy 支持的最高频段：Band 2 优先按 5G 处理
+case "$INFO" in
+	*"Band 2:"*)
+		RD="radio0"; CH="36"; HM="HE80"; BAND="5g"
+		;;
+	*"Band 1:"*)
+		RD="radio1"; CH="1"; HM="HT20"; BAND="2g"
+		;;
+	*)
+		exit 0
+		;;
+esac
+
+# 找到该 phy 对应的 wireless 配置节（匹配 path 或 phy）
+SEC=""
+for s in $(uci show wireless 2>/dev/null | sed -n 's/^wireless\.\(radio[0-9]*\)=wifi-device$/\1/p'); do
+	P=$(uci -q get "wireless.$s.path")
+	PH=$(uci -q get "wireless.$s.phy")
+	[ "$P" = "$DEV" ] || [ "$PH" = "$DEV" ] && { SEC="$s"; break; }
+done
+[ -n "$SEC" ] || SEC="$RD"
+
+# 已在目标值上就跳过，避免反复写 flash
+CUR_CH=$(uci -q get "wireless.$SEC.channel")
+CUR_HM=$(uci -q get "wireless.$SEC.htmode")
+CUR_CC=$(uci -q get "wireless.$SEC.country")
+if [ "$CUR_CH" = "$CH" ] && [ "$CUR_HM" = "$HM" ] && [ "$CUR_CC" = "CN" ]; then
+	exit 0
+fi
+
+uci set "wireless.$SEC.country=CN"
+uci set "wireless.$SEC.channel=$CH"
+uci set "wireless.$SEC.htmode=$HM"
+uci delete "wireless.$SEC.channels" 2>/dev/null
+uci commit wireless
+
+# 关掉内核 flow offload（交给 NSS，避免与 eBPF/dae 冲突）
+uci set firewall.@defaults[0].flow_offloading='0'
+uci set firewall.@defaults[0].flow_offloading_hw='0'
+uci commit firewall
+
+logger -t cn-wifi "fixed $SEC ($DEV) -> CN ch$CH $HM"
+
+# 配置已由 netifd 加载过，需要重新加载无线才生效
+wifi reload
+exit 0
+WLEOT
+chmod +x "$PACKAGE_PATH/base-files/files/etc/hotplug.d/ieee80211/10-cn-fix"
+
+# ---------- 首次启动兜底：等配置生成后再修正一次 ----------
 mkdir -p "$PACKAGE_PATH/base-files/files/etc/uci-defaults"
-
 cat > "$PACKAGE_PATH/base-files/files/etc/uci-defaults/99-wireless-cn" << 'WLEOT'
 #!/bin/sh
-
-# 等 wireless 配置生成完毕
-for i in 1 2 3 4 5 6 7 8 9 10; do
-	[ -f /etc/config/wireless ] && break
+# 等待 mac80211.uc 生成 /etc/config/wireless
+for i in $(seq 1 30); do
+	[ -s /etc/config/wireless ] && break
 	sleep 2
 done
 
-# 遍历 wireless 配置里所有 wifi-device 节
 uci show wireless 2>/dev/null | while IFS='=' read -r key val; do
 	case "$key" in
-		wireless.radio[0-9])
-			radio=$(echo "$key" | sed 's/.*\.//')
-			band=$(uci -q get wireless.$radio.band 2>/dev/null)
-			case "$band" in
-				5g|60g)
-					uci set wireless.$radio.country='CN'
-					uci set wireless.$radio.channel='36'
-					uci set wireless.$radio.htmode='HE80'
-					uci delete wireless.$radio.channels 2>/dev/null
+		wireless.radio[0-9]*)
+			[ "$val" = "wifi-device" ] || continue
+			R="${key#wireless.}"
+			C=$(uci -q get "wireless.$R.channel")
+			case "$C" in
+				36|40|44|48|149|153|157|161|165)
+					uci set "wireless.$R.country=CN"
+					uci set "wireless.$R.htmode=HE80"
+					uci delete "wireless.$R.channels" 2>/dev/null
 					;;
-				2g)
-					uci set wireless.$radio.country='CN'
-					uci set wireless.$radio.channel='1'
-					uci set wireless.$radio.htmode='HT20'
-					uci delete wireless.$radio.channels 2>/dev/null
+				[1-9]|1[1-3])
+					uci set "wireless.$R.country=CN"
+					uci set "wireless.$R.htmode=HT20"
+					uci delete "wireless.$R.channels" 2>/dev/null
 					;;
 			esac
 			;;
 	esac
 done
 
-# 关内核 flow offload（NSS 接管，避免与 eBPF/dae 冲突）
 uci set firewall.@defaults[0].flow_offloading='0'
 uci set firewall.@defaults[0].flow_offloading_hw='0'
 
 uci commit wireless
 uci commit firewall
-
 exit 0
 WLEOT
-
 chmod +x "$PACKAGE_PATH/base-files/files/etc/uci-defaults/99-wireless-cn"
 
 # ---------- 防火墙模板层兜底关 flow offload ----------
 FIX "firewall-no-flow-offload" "./package/network/config/firewall" sed -i \
 	's/option.*flow_offloading.*1/option flow_offloading 0/g; s/option.*flow_offloading_hw.*1/option flow_offloading_hw 0/g' \
 	./package/network/config/firewall/files/firewall.config 2>/dev/null
+
+echo " "
+echo "=================================================="
+echo "  Done - 亚瑟 1G / daede / honk / NSS / 双频固化"
+echo "  5G: CN ch36 HE80 | 2.4G: CN ch1 HT20"
+echo "=================================================="
