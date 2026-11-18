@@ -5,14 +5,20 @@ UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main" "" "dae daed luci-app-daed
 UPDATE_PACKAGE "honk" "kenzok8/openwrt-honk" "main" "" "honk"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "dev" "pkg"
 
-# 2. 预下载 Clash Meta (Mihomo) 内核（ARM64 架构，适配京东云亚瑟 IPQ60xx）
-CORE_DIR="./files/etc/openclash/core"
+# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（GeoIP / GeoSite / Country.mmdb）
+OPENCLASH_DIR="./files/etc/openclash"
+CORE_DIR="$OPENCLASH_DIR/core"
 mkdir -p "$CORE_DIR"
+
 wget -qO /tmp/clash-meta.tar.gz "https://githubusercontent.com"
 tar -zxf /tmp/clash-meta.tar.gz -C "$CORE_DIR"
 [ -f "$CORE_DIR/clash" ] && mv -f "$CORE_DIR/clash" "$CORE_DIR/clash_meta"
 chmod +x "$CORE_DIR/clash_meta"
 rm -f /tmp/clash-meta.tar.gz
+
+wget -qO "$OPENCLASH_DIR/Country.mmdb" "https://jsdelivr.net"
+wget -qO "$OPENCLASH_DIR/GeoIP.dat" "https://jsdelivr.net"
+wget -qO "$OPENCLASH_DIR/GeoSite.dat" "https://jsdelivr.net"
 
 # 3. 精简多余主题（仅保留 luci-theme-vantage）和未使用的大型插件源码
 rm -rf ./package/luci-theme-argon ./package/luci-app-argon-config
@@ -27,50 +33,37 @@ rm -rf ./package/QModem ./package/luci-app-airpi3000m-fancontrol ./package/luci-
 rm -rf ./package/luci-app-fm350 ./package/luci-app-h5000m-netmode ./package/luci-app-mt5700
 rm -rf ./package/luci-app-mt5700m ./package/luci-app-netmonitor ./package/luci-app-qmodem-generic
 
-# 4. 彻底固化 WiFi 默认配置（修改底层模板 + 延迟校准双保险）
-WIFI_UC="./package/network/config/wifi-scripts/files/lib/wifi/mac80211.uc"
-if [ -f "$WIFI_UC" ]; then
-	sed -i "s/country='.*'/country='CN'/g; s/country = '.*'/country = 'CN'/g" "$WIFI_UC"
-	sed -i "s/disabled=1/disabled=0/g; s/disabled = 1/disabled = 0/g" "$WIFI_UC"
-	sed -i "s/htmode='HE20'/htmode='HE80'/g; s/htmode = 'HE20'/htmode = 'HE80'/g" "$WIFI_UC"
-	sed -i "s/channel='auto'/channel='36'/g; s/channel = 'auto'/channel = '36'/g" "$WIFI_UC"
+# 4. 清理旧的 uci-defaults 无线脚本，改用 rc.local 延迟压制仓库默认覆盖
+rm -f ./files/etc/uci-defaults/zzz-custom-wifi
+mkdir -p ./files/etc
+cat <<'EOF' > ./files/etc/rc.local
+# 首次开机无线参数终极固化（等仓库默认脚本执行完毕后再精准覆写，仅执行一次）
+if [ ! -f /etc/.wifi_fixed ]; then
+	(
+		sleep 15
+		[ -s /etc/config/wireless ] || wifi config
+		for radio in radio0 radio1; do
+			band=$(uci -q get wireless.${radio}.band)
+			if [ "$band" = "5g" ]; then
+				uci set wireless.${radio}.country='CN'
+				uci set wireless.${radio}.channel='36'
+				uci set wireless.${radio}.htmode='HE80'
+				uci set wireless.${radio}.disabled='0'
+			elif [ "$band" = "2g" ]; then
+				uci set wireless.${radio}.country='CN'
+				uci set wireless.${radio}.channel='1'
+				uci set wireless.${radio}.htmode='HT20'
+				uci set wireless.${radio}.disabled='0'
+			fi
+		done
+		uci -q set wireless.default_radio0.disabled='0'
+		uci -q set wireless.default_radio1.disabled='0'
+		uci commit wireless
+		wifi reload
+		touch /etc/.wifi_fixed
+	) &
 fi
 
-# 5. 写入根目录 files/etc/uci-defaults/zzz-custom-wifi（确保最后执行且等待驱动就绪）
-mkdir -p ./files/etc/uci-defaults
-cat <<'EOF' > ./files/etc/uci-defaults/zzz-custom-wifi
-#!/bin/sh
-
-for i in $(seq 1 15); do
-	[ -s /etc/config/wireless ] && grep -q "wifi-device" /etc/config/wireless && break
-	sleep 1
-done
-
-[ -s /etc/config/wireless ] || wifi config
-
-for radio in radio0 radio1; do
-	band=$(uci -q get wireless.${radio}.band)
-	if [ "$band" = "5g" ]; then
-		uci set wireless.${radio}.country='CN'
-		uci set wireless.${radio}.channel='36'
-		uci set wireless.${radio}.htmode='HE80'
-		uci set wireless.${radio}.disabled='0'
-	elif [ "$band" = "2g" ]; then
-		uci set wireless.${radio}.country='CN'
-		uci set wireless.${radio}.channel='1'
-		uci set wireless.${radio}.htmode='HT20'
-		uci set wireless.${radio}.disabled='0'
-	fi
-done
-
-for iface in default_radio0 default_radio1; do
-	if uci -q get wireless.${iface} >/dev/null; then
-		uci set wireless.${iface}.disabled='0'
-	fi
-done
-
-uci commit wireless
-wifi reload
 exit 0
 EOF
-chmod +x ./files/etc/uci-defaults/zzz-custom-wifi
+chmod +x ./files/etc/rc.local
