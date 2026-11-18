@@ -1,41 +1,36 @@
 #!/bin/bash
 
-# 1. 拉取 daede（含统一 LuCI 界面 luci-app-daede）、honk（仅核心）以及 openclash
+# 1. 拉取 daede（含统一 LuCI 界面）、honk（含 LuCI 界面）以及 openclash
 UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main" "" "dae daed luci-app-daede"
-UPDATE_PACKAGE "honk" "kenzok8/openwrt-honk" "main" "" "honk"
+UPDATE_PACKAGE "honk" "kenzok8/openwrt-honk" "main" "" "luci-app-honk"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "dev" "pkg"
 
-# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（适配 1GB RAM + 2GB 大分区，多源兜底防失效）
+# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（适配 1GB RAM + 2GB 大分区）
 OPENCLASH_DIR="./files/etc/openclash"
 CORE_DIR="$OPENCLASH_DIR/core"
 mkdir -p "$CORE_DIR"
 
 GH_RAW="https:/""/raw.githubusercontent.com"
 CDN_GH="https:/""/testingcf.jsdelivr.net/gh"
-GH_API="https:/""/api.github.com"
 
-# 动态获取最新 Meta 内核压缩包地址（兼容文件名变更），并保留官方直链兜底
-META_URL=$(curl -fsSL "$GH_API/repos/MetaCubeX/mihomo/releases/latest" | grep -oE 'https://[^"]+mihomo-linux-arm64-v1-[^"]+\.gz' | head -n 1)
-[ -z "$META_URL" ] && META_URL=$(curl -fsSL "$GH_API/repos/MetaCubeX/mihomo/releases/latest" | grep -oE 'https://[^"]+mihomo-linux-arm64-[^"]+\.gz' | grep -vE 'compatible|v2|v3|go' | head -n 1)
-
-if [ -n "$META_URL" ] && wget -O /tmp/clash-meta.gz "$META_URL"; then
-	gzip -dc /tmp/clash-meta.gz > "$CORE_DIR/clash_meta"
+# 动态获取最新 Mihomo ARM64 内核，失败则自动回退到 OpenClash 官方内核源
+MIHOMO_URL=$(curl -sL "https:/""/api.github.com/repos/MetaCubeX/mihomo/releases/latest" | grep -oE '"browser_download_url": *"[^"]*mihomo-linux-arm64-v[^"]*\.gz"' | head -n 1 | cut -d '"' -f 4)
+if [ -n "$MIHOMO_URL" ] && wget -qO /tmp/clash-meta.gz "$MIHOMO_URL"; then
+	gzip -d -c /tmp/clash-meta.gz > "$CORE_DIR/clash_meta"
 	rm -f /tmp/clash-meta.gz
 else
-	wget -O /tmp/clash-meta.tar.gz "$GH_RAW/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz" || \
-	wget -O /tmp/clash-meta.tar.gz "$CDN_GH/vernesong/OpenClash@core/master/meta/clash-linux-arm64.tar.gz"
+	wget -qO /tmp/clash-meta.tar.gz "$CDN_GH/vernesong/OpenClash@core/master/meta/clash-linux-arm64-v1.tar.gz" || \
+	wget -qO /tmp/clash-meta.tar.gz "$GH_RAW/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz"
 	tar -zxf /tmp/clash-meta.tar.gz -C "$CORE_DIR"
-	find "$CORE_DIR" -maxdepth 1 -type f -name "clash*" ! -name "clash_meta" -exec mv -f {} "$CORE_DIR/clash_meta" \;
+	[ -f "$CORE_DIR/clash" ] && mv -f "$CORE_DIR/clash" "$CORE_DIR/clash_meta"
 	rm -f /tmp/clash-meta.tar.gz
 fi
 
-chmod +x "$CORE_DIR/clash_meta"
-
-# 校验内核是否有效下载（避免空包）
 if [ ! -s "$CORE_DIR/clash_meta" ]; then
-	echo "ERROR: clash_meta download failed!"
+	echo "ERROR: Failed to download clash_meta core!"
 	exit 1
 fi
+chmod +x "$CORE_DIR/clash_meta"
 
 # 预置三大规则数据库
 wget -qO "$OPENCLASH_DIR/Country.mmdb" "$CDN_GH/alecthw/mmdb_china_ip_list@release/Country.mmdb"
