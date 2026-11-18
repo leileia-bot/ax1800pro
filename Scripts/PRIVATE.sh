@@ -66,3 +66,15 @@ fi
 exit 0
 EOF
 chmod +x ./files/etc/rc.local
+
+# 5. 内核分区扩容至 12MB 及冗余冲突包清理（集中收口，防止同步上游覆盖 Handles.sh 后失效）
+if [ -f "./target/linux/qualcommax/image/ipq60xx.mk" ]; then
+	sed -i 's/KERNEL_SIZE := 6144k/KERNEL_SIZE := 12288k/g' "./target/linux/qualcommax/image/ipq60xx.mk"
+fi
+rm -rf ./package/viking/luci-app-homeproxy ./package/viking/sing-box
+rm -rf ./package/viking/gecoosac
+rm -rf ./package/viking/luci-app-wolultra ./package/viking/luci-app-upnp
+rm -rf ./package/natmapt ./package/stuntman ./package/luci-app-natmapt
+rm -rf ./feeds/packages/net/fullconenat-sonic ./feeds/luci/applications/luci-app-fullconenat-sonic
+rm -rf ./feeds/luci/applications/luci-app-upnp ./feeds/packages/net/miniupnpd
+rm -rf ./feeds/luci/applications/luci-app-samba4
