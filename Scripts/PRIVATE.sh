@@ -5,20 +5,23 @@ UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main" "" "dae daed luci-app-daed
 UPDATE_PACKAGE "honk" "kenzok8/openwrt-honk" "main" "" "honk"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "dev" "pkg"
 
-# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（适配 1GB RAM + 2GB 大分区）
+# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（采用分段拼接，防止手机剪贴板截断链接）
 OPENCLASH_DIR="./files/etc/openclash"
 CORE_DIR="$OPENCLASH_DIR/core"
 mkdir -p "$CORE_DIR"
 
-wget -qO /tmp/clash-meta.tar.gz "https://githubusercontent.com"
+GH_RAW="https://githubusercontent.com"
+CDN_GH="https://jsdelivr.net"
+
+wget -qO /tmp/clash-meta.tar.gz "$GH_RAW/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz"
 tar -zxf /tmp/clash-meta.tar.gz -C "$CORE_DIR"
 [ -f "$CORE_DIR/clash" ] && mv -f "$CORE_DIR/clash" "$CORE_DIR/clash_meta"
 chmod +x "$CORE_DIR/clash_meta"
 rm -f /tmp/clash-meta.tar.gz
 
-wget -qO "$OPENCLASH_DIR/Country.mmdb" "https://jsdelivr.net"
-wget -qO "$OPENCLASH_DIR/GeoIP.dat" "https://jsdelivr.net"
-wget -qO "$OPENCLASH_DIR/GeoSite.dat" "https://jsdelivr.net"
+wget -qO "$OPENCLASH_DIR/Country.mmdb" "$CDN_GH/alecthw/mmdb_china_ip_list@release/Country.mmdb"
+wget -qO "$OPENCLASH_DIR/GeoIP.dat" "$CDN_GH/Loyalsoldier/v2ray-rules-dat@release/geoip.dat"
+wget -qO "$OPENCLASH_DIR/GeoSite.dat" "$CDN_GH/Loyalsoldier/v2ray-rules-dat@release/geosite.dat"
 
 # 3. 精简多余主题（仅保留 luci-theme-vantage）和未使用的大型插件源码
 rm -rf ./package/luci-theme-argon ./package/luci-app-argon-config
