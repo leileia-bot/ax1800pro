@@ -10,7 +10,7 @@ OPENCLASH_DIR="./files/etc/openclash"
 CORE_DIR="$OPENCLASH_DIR/core"
 mkdir -p "$CORE_DIR"
 
-GH_RAW="https:/""/://githubusercontent.com"
+GH_RAW="https:/""/://ram.githubusercontent.com"
 CDN_GH="https:/""/testingcf.jsdelivr.net/gh"
 
 
