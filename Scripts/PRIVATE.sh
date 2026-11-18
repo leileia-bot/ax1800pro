@@ -5,7 +5,7 @@ UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main" "" "dae daed luci-app-daed
 UPDATE_PACKAGE "honk" "kenzok8/openwrt-honk" "main" "" "honk"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "dev" "pkg"
 
-# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（GeoIP / GeoSite / Country.mmdb）
+# 2. 预下载 Clash Meta (Mihomo) 内核与规则数据库（适配 1GB RAM + 2GB 大分区）
 OPENCLASH_DIR="./files/etc/openclash"
 CORE_DIR="$OPENCLASH_DIR/core"
 mkdir -p "$CORE_DIR"
@@ -33,11 +33,10 @@ rm -rf ./package/QModem ./package/luci-app-airpi3000m-fancontrol ./package/luci-
 rm -rf ./package/luci-app-fm350 ./package/luci-app-h5000m-netmode ./package/luci-app-mt5700
 rm -rf ./package/luci-app-mt5700m ./package/luci-app-netmonitor ./package/luci-app-qmodem-generic
 
-# 4. 清理旧的 uci-defaults 无线脚本，改用 rc.local 延迟压制仓库默认覆盖
+# 4. 无线参数永久固化（等 router-tool 首次初始化完成后精准覆写，仅执行一次）
 rm -f ./files/etc/uci-defaults/zzz-custom-wifi
 mkdir -p ./files/etc
 cat <<'EOF' > ./files/etc/rc.local
-# 首次开机无线参数终极固化（等仓库默认脚本执行完毕后再精准覆写，仅执行一次）
 if [ ! -f /etc/.wifi_fixed ]; then
 	(
 		sleep 15
