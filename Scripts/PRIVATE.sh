@@ -10,8 +10,9 @@ OPENCLASH_DIR="./files/etc/openclash"
 CORE_DIR="$OPENCLASH_DIR/core"
 mkdir -p "$CORE_DIR"
 
-GH_RAW="https://githubusercontent.com"
-CDN_GH="https://jsdelivr.net"
+GH_RAW="https:/""/://githubusercontent.com"
+CDN_GH="https:/""/testingcf.jsdelivr.net/gh"
+
 
 wget -qO /tmp/clash-meta.tar.gz "$GH_RAW/vernesong/OpenClash/core/master/meta/clash-linux-arm64.tar.gz"
 tar -zxf /tmp/clash-meta.tar.gz -C "$CORE_DIR"
