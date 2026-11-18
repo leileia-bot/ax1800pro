@@ -38,7 +38,7 @@ if [ -f "$WIFI_UC" ]; then
 		elif [ "$band" = "2g" ]; then
 			uci set wireless.${radio}.country='CN'
 			uci set wireless.${radio}.channel='1'
-			uci set wireless.${radio}.htmode='HE20'
+			uci set wireless.${radio}.htmode='HT20'
 			uci set wireless.${radio}.disabled='0'
 		fi
 	done
