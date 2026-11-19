@@ -64,9 +64,10 @@ rm -rf ./feeds/packages/net/fullconenat-sonic ./feeds/luci/applications/luci-app
 rm -rf ./feeds/luci/applications/luci-app-upnp ./feeds/packages/net/miniupnpd
 rm -rf ./feeds/luci/applications/luci-app-samba4
 
-# 5. 调整「服务」菜单顺序：Honk 在上 (order:10) -> daede 在中 (order:20) -> OpenClash 在下
-HONK_MENU=$(find ./package -path "*/luci-app-honk/*" -name "*.json" -o -name "*.lua")
-[ -n "$HONK_MENU" ] && sed -i 's/"order"[[:space:]]*:[[:space:]]*[0-9]\+/"order": 10/g; s/entry(\([^)]*\),[[:space:]]*[0-9]\+)/entry(\1, 10)/g' $HONK_MENU
-
-DAEDE_MENU=$(find ./package -path "*/luci-app-daede/*" -name "*.json" -o -name "*.lua")
-[ -n "$DAEDE_MENU" ] && sed -i 's/"order"[[:space:]]*:[[:space:]]*[0-9]\+/"order": 20/g; s/entry(\([^)]*\),[[:space:]]*[0-9]\+)/entry(\1, 20)/g' $DAEDE_MENU
+# 5. 调整「服务」菜单顺序：Honk 在上 (order:10) -> daede 在中 (order:20) -> OpenClash 在下（仅修改首个顶级 order，保留子标签页原顺序）
+for f in $(find ./package -path "*/luci-app-honk/*" -name "*.json"); do
+	awk '!done && /"order"[[:space:]]*:/ { sub(/[0-9]+/, "10"); done=1 } { print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
+for f in $(find ./package -path "*/luci-app-daede/*" -name "*.json"); do
+	awk '!done && /"order"[[:space:]]*:/ { sub(/[0-9]+/, "20"); done=1 } { print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
+done
