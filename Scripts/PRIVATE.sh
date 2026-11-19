@@ -18,13 +18,15 @@ rm -rf ./package/QModem ./package/luci-app-airpi3000m-fancontrol ./package/luci-
 rm -rf ./package/luci-app-fm350 ./package/luci-app-h5000m-netmode ./package/luci-app-mt5700
 rm -rf ./package/luci-app-mt5700m ./package/luci-app-netmonitor ./package/luci-app-qmodem-generic
 
-# 3. 无线参数永久固化（等 router-tool 首次初始化完成后精准覆写，仅执行一次）
+# 3. 首次开机等所有 uci-defaults 初始化彻底完成后，统一固化无线参数 + Honk 开箱即用手动模式（仅执行一次）
 rm -f ./files/etc/uci-defaults/zzz-custom-wifi
 mkdir -p ./files/etc
 cat <<'EOF' > ./files/etc/rc.local
-if [ ! -f /etc/.wifi_fixed ]; then
+if [ ! -f /etc/.sys_init_done ]; then
 	(
 		sleep 15
+
+		# A. 固化双频无线参数（避开 router-tool 首次重置）
 		[ -s /etc/config/wireless ] || wifi config
 		for radio in radio0 radio1; do
 			band=$(uci -q get wireless.${radio}.band)
@@ -44,7 +46,108 @@ if [ ! -f /etc/.wifi_fixed ]; then
 		uci -q set wireless.default_radio1.disabled='0'
 		uci commit wireless
 		wifi reload
-		touch /etc/.wifi_fixed
+
+		# B. 自动完成 Honk 首次初始化（防更新写法，默认停止且不自启，点启动即绿灯并开启 --store db）
+		if [ -f /etc/init.d/honk ]; then
+			printf '{"username":"root","password":"12345678"}' | /usr/share/honk/control.sh initialize
+
+			mkdir -p /var/lib/honk /etc/honk
+			ln -sf /usr/share/v2ray/geoip.dat /var/lib/honk/geoip.dat
+			ln -sf /usr/share/v2ray/geosite.dat /var/lib/honk/geosite.dat
+
+			cat <<'HONKEOF' > /etc/honk/config.dae
+global {
+    wan_interface: auto
+    lan_interface: br-lan
+    log_level: info
+    dial_mode: domain
+    allow_insecure: false
+    auto_config_kernel_parameter: true
+    data_dir: '/var/lib/honk'
+    log_file: ''
+    tcp_check_url: 'https:/''/gstatic.com'
+    tcp_check_http_method: HEAD
+    udp_check_dns: '8.8.8.8:53'
+    check_interval: 300s
+    bootstrap_resolver: '223.5.5.5:53'
+    store_subscribe: true
+    nfqueue_enable: true
+}
+
+experimental {
+    native_api {
+        enabled: true
+        listen: '192.168.1.1:9527'
+        password_auth: true
+        allow_anonymous_loopback: false
+        config_write: true
+        ui: '/usr/share/doona'
+    }
+}
+
+node {
+}
+
+group {
+    proxy {
+        policy: min_moving_avg
+    }
+}
+
+dns {
+    client_subnet: auto
+    upstream {
+        default: 'udp://223.5.5.5:53' -> direct
+        remote: 'tcp+udp://8.8.8.8:53' -> proxy
+    }
+    routing {
+        request {
+            qname(geosite:private) -> asis
+            qname(geosite:cn) -> default
+            fallback: remote
+        }
+        response {
+            upstream(remote) -> accept
+            qname(geosite:private) -> accept
+            ip(geoip:cn) -> accept
+            fallback: remote
+        }
+    }
+}
+
+routing {
+    dip(224.0.0.0/3, 'ff00::/8') -> direct
+    pname(AdGuardHome, mosdns, mihomo, sing-box, clash, frpc, xray, v2ray) -> direct(must)
+    pname(qbittorrent) -> direct(must)
+    dscp(4) -> direct(must)
+    pname(dnsmasq) && l4proto(udp) && dport(53) -> direct(must)
+    dip(geoip:private) && !dport(53) -> direct(must)
+    dip(geoip:cn) && !dport(53) -> direct(must)
+    domain(geosite:private) -> direct
+    domain(geosite:cn) -> direct
+    domain(geosite:apple-cn) -> direct
+    domain(geosite:category-games@cn) -> direct
+    domain(geosite:steam@cn) -> direct
+    domain(geosite:category-ai-cn) -> direct
+    domain(geosite:onedrive) -> direct
+    fallback: proxy
+}
+HONKEOF
+
+			sed -i "s|'https:/''/gstatic.com'|'https://gstatic.com'|g" /etc/honk/config.dae
+			sed -i "s|data_dir: '/etc/honk'|data_dir: '/var/lib/honk'|g" /etc/honk/system.dae
+			[ ! -f /etc/init.d/honk.bak ] && cp -f /etc/init.d/honk /etc/init.d/honk.bak
+			cp -f /etc/init.d/honk.bak /etc/init.d/honk
+			grep -q -- '--store db' /etc/init.d/honk || sed -i '/procd_set_param command.*honk-core/ s/$/ --store db/' /etc/init.d/honk
+
+			uci set honk.main.enabled='0'
+			uci commit honk
+			/etc/init.d/honk disable
+			/etc/init.d/honk stop
+			rm -rf /var/run/honk/* /tmp/honk* /var/lib/honk/state
+		fi
+
+		touch /etc/.sys_init_done
 	) &
 fi
 
