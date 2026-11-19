@@ -1,11 +1,36 @@
 #!/bin/bash
 
-# 1. 拉取 daede（含统一 LuCI 界面）、QiuSimons/luci-app-honk（master 分支）以及 openclash（纯界面，不内置内核）
+# 1. 拉取 daede、QiuSimons/luci-app-honk（master分支，含核心与界面）以及 openclash（纯界面）
 UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main" "" "dae daed luci-app-daede"
 UPDATE_PACKAGE "honk" "QiuSimons/luci-app-honk" "master" "" "honk luci-app-honk"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "dev" "pkg"
 
-# 2. 精简多余主题（仅保留 luci-theme-vantage）和未使用的大型插件源码
+# 2. 安装 QiuSimons/luci-app-honk 所需的 Rust / Zig / bpf-linker 编译工具链
+TOOLCHAIN_SCRIPT=$(find ./package -maxdepth 3 -name "honk_toolchain.sh" | head -n 1)
+if [ -f "$TOOLCHAIN_SCRIPT" ]; then
+	sudo apt-get update
+	sudo apt-get install -y clang llvm libbpf-dev cmake libclang-dev zstd make perl file binutils git curl xz-utils pkg-config ca-certificates
+
+	RUST_URL="https:/""/sh.rustup.rs"
+	curl --proto '=https' --tlsv1.2 -sSf "$RUST_URL" | sh -s -- -y --profile minimal --no-modify-path
+	. "$HOME/.cargo/env"
+	sudo ln -sf "$HOME/.cargo/bin/"* /usr/local/bin/
+
+	eval "$(bash "$TOOLCHAIN_SCRIPT")"
+
+	GH_URL="https:/""/github.com"
+	ZIG_HOST="https:/""/ziglang.org"
+
+	curl -fsSL -o /tmp/bpf-linker.tar.zst "$GH_URL/aya-rs/bpf-linker/releases/download/v${BPF_LINKER_VERSION}/bpf-linker-x86_64-unknown-linux-musl.tar.zst"
+	echo "${BPF_LINKER_SHA256}  /tmp/bpf-linker.tar.zst" | sha256sum -c -
+	sudo tar --zstd -xf /tmp/bpf-linker.tar.zst -C /usr/local/bin
+
+	curl -fsSL -o /tmp/zig.tar.xz "$ZIG_HOST/download/${ZIG_VERSION}/zig-x86_64-linux-${ZIG_VERSION}.tar.xz"
+	sudo tar -xJf /tmp/zig.tar.xz -C /usr/local
+	sudo ln -sf "/usr/local/zig-x86_64-linux-${ZIG_VERSION}/zig" /usr/local/bin/zig
+fi
+
+# 3. 精简多余主题（仅保留 luci-theme-vantage）和未使用的大型插件源码
 rm -rf ./package/luci-theme-argon ./package/luci-app-argon-config
 rm -rf ./package/luci-theme-aurora ./package/luci-app-aurora-config
 rm -rf ./package/luci-theme-fluent ./package/luci-theme-footstrap
@@ -18,7 +43,7 @@ rm -rf ./package/QModem ./package/luci-app-airpi3000m-fancontrol ./package/luci-
 rm -rf ./package/luci-app-fm350 ./package/luci-app-h5000m-netmode ./package/luci-app-mt5700
 rm -rf ./package/luci-app-mt5700m ./package/luci-app-netmonitor ./package/luci-app-qmodem-generic
 
-# 3. 无线参数永久固化（等 router-tool 首次初始化完成后精准覆写，仅执行一次）
+# 4. 无线参数永久固化（等 router-tool 首次初始化完成后精准覆写，仅执行一次）
 rm -f ./files/etc/uci-defaults/zzz-custom-wifi
 mkdir -p ./files/etc
 cat <<'EOF' > ./files/etc/rc.local
@@ -52,7 +77,7 @@ exit 0
 EOF
 chmod +x ./files/etc/rc.local
 
-# 4. 内核分区扩容至 12MB 及冗余冲突包清理（集中收口，防止同步上游覆盖 Handles.sh 后失效）
+# 5. 内核分区扩容至 12MB 及冗余冲突包清理（集中收口，防止同步上游覆盖 Handles.sh 后失效）
 if [ -f "./target/linux/qualcommax/image/ipq60xx.mk" ]; then
 	sed -i 's/KERNEL_SIZE := 6144k/KERNEL_SIZE := 12288k/g' "./target/linux/qualcommax/image/ipq60xx.mk"
 fi
