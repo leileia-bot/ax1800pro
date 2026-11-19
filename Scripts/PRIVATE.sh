@@ -1,8 +1,8 @@
 #!/bin/bash
 
-# 1. 拉取 daede、QiuSimons/luci-app-honk（核心+界面）以及 openclash（纯界面）
+# 1. 拉取 daede（含统一 LuCI 界面）、QiuSimons/luci-app-honk（master 分支）以及 openclash（纯界面，不内置内核）
 UPDATE_PACKAGE "daede" "kenzok8/openwrt-daede" "main" "" "dae daed luci-app-daede"
-UPDATE_PACKAGE "honk" "QiuSimons/luci-app-honk" "main" "" "honk luci-app-honk"
+UPDATE_PACKAGE "honk" "QiuSimons/luci-app-honk" "master" "" "honk luci-app-honk"
 UPDATE_PACKAGE "luci-app-openclash" "vernesong/OpenClash" "dev" "pkg"
 
 # 2. 精简多余主题（仅保留 luci-theme-vantage）和未使用的大型插件源码
