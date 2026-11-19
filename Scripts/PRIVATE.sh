@@ -18,10 +18,14 @@ rm -rf ./package/QModem ./package/luci-app-airpi3000m-fancontrol ./package/luci-
 rm -rf ./package/luci-app-fm350 ./package/luci-app-h5000m-netmode ./package/luci-app-mt5700
 rm -rf ./package/luci-app-mt5700m ./package/luci-app-netmonitor ./package/luci-app-qmodem-generic
 
-# 3. 首次开机等所有 uci-defaults 初始化彻底完成后，统一固化无线参数 + Honk 开箱即用手动模式（仅执行一次）
+# 3. 首次开机无损追加初始化逻辑（保留仓库原有 rc.local 逻辑，等所有 uci-defaults 完成后执行一次）
 rm -f ./files/etc/uci-defaults/zzz-custom-wifi
 mkdir -p ./files/etc
-cat <<'EOF' > ./files/etc/rc.local
+touch ./files/etc/rc.local
+sed -i '/^[[:space:]]*exit 0[[:space:]]*$/d' ./files/etc/rc.local
+
+cat <<'EOF' >> ./files/etc/rc.local
+
 if [ ! -f /etc/.sys_init_done ]; then
 	(
 		sleep 15
@@ -47,13 +51,15 @@ if [ ! -f /etc/.sys_init_done ]; then
 		uci commit wireless
 		wifi reload
 
-		# B. 自动完成 Honk 首次初始化（防更新写法，默认停止且不自启，点启动即绿灯并开启 --store db）
+		# B. 在 honk 完成出厂初始化后，写入开箱即用手动模式引导配置并开启 --store db 数据库模式
 		if [ -f /etc/init.d/honk ]; then
 			printf '{"username":"root","password":"12345678"}' | /usr/share/honk/control.sh initialize
 
 			mkdir -p /var/lib/honk /etc/honk
 			ln -sf /usr/share/v2ray/geoip.dat /var/lib/honk/geoip.dat
 			ln -sf /usr/share/v2ray/geosite.dat /var/lib/honk/geosite.dat
+			ln -sf /usr/share/v2ray/geoip.dat /etc/honk/geoip.dat
+			ln -sf /usr/share/v2ray/geosite.dat /etc/honk/geosite.dat
 
 			cat <<'HONKEOF' > /etc/honk/config.dae
 global {
@@ -133,11 +139,9 @@ routing {
     fallback: proxy
 }
 HONKEOF
-
 			sed -i "s|'https:/''/gstatic.com'|'https://gstatic.com'|g" /etc/honk/config.dae
-			sed -i "s|data_dir: '/etc/honk'|data_dir: '/var/lib/honk'|g" /etc/honk/system.dae
+			[ -f /etc/honk/system.dae ] && sed -i "s|data_dir: '/etc/honk'|data_dir: '/var/lib/honk'|g" /etc/honk/system.dae
 			[ ! -f /etc/init.d/honk.bak ] && cp -f /etc/init.d/honk /etc/init.d/honk.bak
-			cp -f /etc/init.d/honk.bak /etc/init.d/honk
 			grep -q -- '--store db' /etc/init.d/honk || sed -i '/procd_set_param command.*honk-core/ s/$/ --store db/' /etc/init.d/honk
 
 			uci set honk.main.enabled='0'
@@ -167,10 +171,10 @@ rm -rf ./feeds/packages/net/fullconenat-sonic ./feeds/luci/applications/luci-app
 rm -rf ./feeds/luci/applications/luci-app-upnp ./feeds/packages/net/miniupnpd
 rm -rf ./feeds/luci/applications/luci-app-samba4
 
-# 5. 调整「服务」菜单顺序：Honk 在上 (order:10) -> daede 在中 (order:20) -> OpenClash 在下（仅修改首个顶级 order，保留子标签页原顺序）
-for f in $(find ./package -path "*/luci-app-honk/*" -name "*.json"); do
+# 5. 调整「服务」菜单顺序：Honk 在上 (order:10) -> daede 在中 (order:20) -> OpenClash 在下（兼容 package 与 feeds 全路径）
+for f in $(find ./package ./feeds -path "*/luci-app-honk/*" -name "*.json" 2>/dev/null); do
 	awk '!done && /"order"[[:space:]]*:/ { sub(/[0-9]+/, "10"); done=1 } { print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 done
-for f in $(find ./package -path "*/luci-app-daede/*" -name "*.json"); do
+for f in $(find ./package ./feeds -path "*/luci-app-daede/*" -name "*.json" 2>/dev/null); do
 	awk '!done && /"order"[[:space:]]*:/ { sub(/[0-9]+/, "20"); done=1 } { print }' "$f" > "$f.tmp" && mv "$f.tmp" "$f"
 done
